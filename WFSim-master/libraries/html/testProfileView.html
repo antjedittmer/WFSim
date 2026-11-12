@@ -1,0 +1,185 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>testProfileView</title><meta name="generator" content="MATLAB 9.9"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2022-05-31"><meta name="DC.source" content="testProfileView.m"><style type="text/css">
+html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,tt,var,b,u,i,center,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-size:100%;vertical-align:baseline;background:transparent}body{line-height:1}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:before,blockquote:after,q:before,q:after{content:'';content:none}:focus{outine:0}ins{text-decoration:none}del{text-decoration:line-through}table{border-collapse:collapse;border-spacing:0}
+
+html { min-height:100%; margin-bottom:1px; }
+html body { height:100%; margin:0px; font-family:Arial, Helvetica, sans-serif; font-size:10px; color:#000; line-height:140%; background:#fff none; overflow-y:scroll; }
+html body td { vertical-align:top; text-align:left; }
+
+h1 { padding:0px; margin:0px 0px 25px; font-family:Arial, Helvetica, sans-serif; font-size:1.5em; color:#d55000; line-height:100%; font-weight:normal; }
+h2 { padding:0px; margin:0px 0px 8px; font-family:Arial, Helvetica, sans-serif; font-size:1.2em; color:#000; font-weight:bold; line-height:140%; border-bottom:1px solid #d6d4d4; display:block; }
+h3 { padding:0px; margin:0px 0px 5px; font-family:Arial, Helvetica, sans-serif; font-size:1.1em; color:#000; font-weight:bold; line-height:140%; }
+
+a { color:#005fce; text-decoration:none; }
+a:hover { color:#005fce; text-decoration:underline; }
+a:visited { color:#004aa0; text-decoration:none; }
+
+p { padding:0px; margin:0px 0px 20px; }
+img { padding:0px; margin:0px 0px 20px; border:none; }
+p img, pre img, tt img, li img, h1 img, h2 img { margin-bottom:0px; }
+
+ul { padding:0px; margin:0px 0px 20px 23px; list-style:square; }
+ul li { padding:0px; margin:0px 0px 7px 0px; }
+ul li ul { padding:5px 0px 0px; margin:0px 0px 7px 23px; }
+ul li ol li { list-style:decimal; }
+ol { padding:0px; margin:0px 0px 20px 0px; list-style:decimal; }
+ol li { padding:0px; margin:0px 0px 7px 23px; list-style-type:decimal; }
+ol li ol { padding:5px 0px 0px; margin:0px 0px 7px 0px; }
+ol li ol li { list-style-type:lower-alpha; }
+ol li ul { padding-top:7px; }
+ol li ul li { list-style:square; }
+
+.content { font-size:1.2em; line-height:140%; padding: 20px; }
+
+pre, code { font-size:12px; }
+tt { font-size: 1.2em; }
+pre { margin:0px 0px 20px; }
+pre.codeinput { padding:10px; border:1px solid #d3d3d3; background:#f7f7f7; }
+pre.codeoutput { padding:10px 11px; margin:0px 0px 20px; color:#4c4c4c; }
+pre.error { color:red; }
+
+@media print { pre.codeinput, pre.codeoutput { word-wrap:break-word; width:100%; } }
+
+span.keyword { color:#0000FF }
+span.comment { color:#228B22 }
+span.string { color:#A020F0 }
+span.untermstring { color:#B20000 }
+span.syscmd { color:#B28C00 }
+span.typesection { color:#A0522D }
+
+.footer { width:auto; padding:10px 0px; margin:25px 0px 0px; border-top:1px dotted #878787; font-size:0.8em; line-height:140%; font-style:italic; color:#878787; text-align:left; float:none; }
+.footer p { margin:0px; }
+.footer a { color:#878787; }
+.footer a:hover { color:#878787; text-decoration:underline; }
+.footer a:visited { color:#878787; }
+
+table th { padding:7px 5px; text-align:left; vertical-align:middle; border: 1px solid #d6d4d4; font-weight:bold; }
+table td { padding:7px 5px; text-align:left; vertical-align:top; border:1px solid #d6d4d4; }
+
+
+
+
+
+  </style></head><body><div class="content"><img vspace="5" hspace="5" src="testProfileView_01.png" alt=""> <img vspace="5" hspace="5" src="testProfileView_02.png" alt=""> <p class="footer"><br><a href="https://www.mathworks.com/products/matlab/">Published with MATLAB&reg; R2020b</a><br></p></div><!--
+##### SOURCE BEGIN #####
+function testProfileView(ctrlNum)
+close all;
+if ~nargin
+    ctrlNum = 3;
+end
+
+if ctrlNum == -1 % test based on plot magic
+    profile on -history
+    figure(1);
+    plot(magic(4));
+    p = profile('info');
+    profile off;
+    save p p;
+    nrFig = 2;
+else
+    %load('profileInfoSMPC.mat','profileInfo');
+    load(sprintf('profileInfoCtrl%d.mat',ctrlNum),'profileInfo');
+    p = profileInfo;
+    nrFig = 1;
+    
+    
+end
+
+xPosIndent = 0.05;
+yPosIndent = 0.0475;
+if ctrlNum == 3, yPosIndent = 0.045; end
+
+strPwd = pwd;
+
+testProfilePlotSubFun(p, xPosIndent, yPosIndent, nrFig,strPwd,ctrlNum);
+
+end
+
+function testProfilePlotSubFun(p, xPosIndent, yPosIndent, nrFig,strPwd,ctrlNum)
+
+xPosIndentMult = -1;
+yPosIndentMult = -1;
+
+newFigListFun;
+listFunNotAdded = {'vec'};
+curFunName = '';
+
+YalmipStr = fullfile(strPwd,'YALMIP-master');
+
+yalmipFunStr = fullfile(strPwd,'YALMIP-master','extras','yalmip.m');
+yalmipCnt = 0; % only display the first call to yalmip
+optimizeFunStr = fullfile(strPwd,'YALMIP-master','extras','optimize.m');
+%sdpsettingsFunStr = fullfile(strPwd,'YALMIP-master','extras','sdpsettings.m');
+
+for n = 1:size(p.FunctionHistory,2)
+    
+    aFunction = p.FunctionTable(p.FunctionHistory(2,n));
+    isScriptOrFunction = strcmp(aFunction.Type,'M-function') || ...
+        strcmp(aFunction.Type,'M-script'); %only add m files here
+    
+    isInDir = ~isempty(strfind(aFunction.FileName,strPwd)); %check WFSim function
+    
+    yalmipFun = ~isempty(strfind(aFunction.FileName,yalmipFunStr));
+    optimizeFun = ~isempty(strfind(aFunction.FileName,optimizeFunStr));
+    
+    isNotInYALMIP = isempty(strfind(aFunction.FileName,YalmipStr)) || ...   %check WFSim function
+        (yalmipFun && ~yalmipCnt) || optimizeFun;
+    
+    if yalmipFun
+        yalmipCnt = 1;
+    end
+    
+    addFun = ~contains(aFunction.FunctionName,listFunNotAdded);
+    
+    tmp =  strrep(strrep( aFunction.FunctionName, '\','/'), '_','\_');
+    
+    if  isInDir && isScriptOrFunction && addFun &&  isNotInYALMIP %&&  ~strcmp(tmp, curFunName)
+        
+        
+        isNewFun = ~strcmp(tmp, curFunName); %Don't add a function name if it was just called
+        if isNewFun
+            curFunName = tmp;
+        end
+        
+        isEnterFun = ~p.FunctionHistory(1,n);
+        if isEnterFun %&& isNewFun
+            str = 'entering function: ';
+            xPosIndentMult = xPosIndentMult + 1;
+            yPosIndentMult = yPosIndentMult + 1;
+            curXPos = 0 + xPosIndent*xPosIndentMult;
+            curYPos = 1 - yPosIndent*yPosIndentMult;
+            if curYPos < 0
+                yPosIndentMult = 0;
+                curYPos = 1;
+                newFigListFun;
+            end
+            text(curXPos,curYPos,curFunName);
+            
+        else
+            str = ' exiting function: ';
+            xPosIndentMult = max(xPosIndent,xPosIndentMult - 1);
+        end
+        if ctrlNum < 0 % only display in Command Window for test cases
+            disp([str curFunName]);
+        end
+    end
+    %end
+end
+
+    function newFigListFun
+        figure(nrFig); nrFig = nrFig +1;
+        %set(gcf,'position',[360.0000  117.6667  560.0000  500.3333]);
+        set(gca,'XColor','white');
+        set(gca,'YColor','white');
+        set(gcf,'Color','white');
+    end
+end
+##### SOURCE END #####
+--></body></html>
