@@ -1,0 +1,358 @@
+function [CT_prime,phi,mpc] = qLPVMPCcontroller_dU_quadprog(sol,Wp,mpc,K,measured)
+
+% for now: persistent vector (we assume that the effective wind speed of
+% the last time steps is known (from power, cp and control settings)
+persistent vecLastUr
+persistent vecLastUrEst
+persistent vecCT_prime
+persistent P1
+
+persistent v;
+
+lenVecUr = 400;
+nHinf = 0; %min(10, (sol.k-2));
+
+if isempty(vecLastUr)
+    vecLastUr = NaN(2,lenVecUr);
+    vecLastUrEst = NaN(2,lenVecUr);
+    vecCT_prime = NaN(2,lenVecUr);
+    P1 = 0;
+    v = 0.2;
+end
+
+
+% initialize controller
+mpc = MPCinit_ctrl(sol,Wp,mpc);
+
+% Adaptive AIC without V1 (AICnoV1 in WFSim_demo): Koopman effective wind
+% speed model with the inputs CT1, CT2, updated online (sol_update = 1) if
+% the estimation error of the last samples exceeds the threshold
+% (koopmanAdaptStep); the model is kept in mpc as K is not returned
+adUpdated = false;
+if isfield(mpc,'adModel')
+    if mpc.adaptive && sol.k > 1 && isfield(sol,'xprev')
+        [mpc.adModel, mpc.ad, adUpdated] = koopmanAdaptStep(mpc.adModel, mpc.ad, ...
+            sol.turbine.Ur, sol.turbine.CT_prime, sol.xprev(1:2));
+        if adUpdated && mpc.ad.resetState % estimator continues from the measured Ur
+            mpc.xprev = [sol.turbine.Ur; sol.turbine.Ur.^2; sol.turbine.Ur.^3];
+        end
+    end
+    K.A = mpc.adModel.A;
+    K.B = mpc.adModel.B;
+end
+
+% check if the Koopman model should be updated
+enoughData = ~any(isnan(vecLastUr(:))); % alternatively, check for sol.k > length(vecLastUr)
+
+% Check if inf-norm is larger then v data
+error_norm = norm(vecLastUr(:,end-nHinf:end)  - vecLastUrEst(:,end-nHinf:end),'inf');
+
+% if norm(PHX([1 2 3 5 6 7])-KPHX([1 2 3 5 6 7]),'inf') > v
+% error_norm = norm(Measured_X_data(error_norm_channels)-Predicted_X_from_data(error_norm_channels),'inf');
+% add = [error_norm; 0];    % Output if data was added to the library
+if enoughData && error_norm > v && 0
+    P1 = P1 + 1; % Number of library updates
+    [states, stateName] = koopmanLiftedStates('windStatesMPC', vecLastUr,mpc.PolyLiftingFunction,size(K.A,1));
+    
+    X      = states(:,1:end-1); % States
+    X_p    = states(:,2:end); % States delayed
+    inp    = vecCT_prime(:,1:end-1);
+    
+    nx = size(X,1); % number states: Ur1,Ur2 plus lifted states
+    nu = size(inp,1); % number inputs:  Ur1,Ur2 plus lifted states
+    ny = 2; % number inputs:  Ur1,Ur2 plus lifted states
+    approxC = [eye(ny),zeros(ny,nx-ny)];
+    approxD = zeros(ny,nu);
+    
+    %all0 = X_p * pinv([X;inp]);% Matrix Aall: X_p = [A,B] * [X;inp]
+    Psi = [X;inp];
+    K.GKoop = 1/P1*((P1-1)* K.GKoop + Psi* Psi');% Update G
+    K.AKoop = 1/P1*((P1-1)* K.AKoop + X* Psi'); % Update  A
+    
+    all1 = K.AKoop*pinv(K.GKoop); %X_p * pinv([X;inp]);%for States Ur1,Ur2 and lifted states
+    
+    approxA = all1(1:nx,1:nx);
+    approxB = all1(1:nx,nx+1:end);
+    
+    % sys_red1 = ss(K.A,K.B,approxC,approxD,1);
+    sys_red = ss(approxA,approxB,approxC,approxD,1);
+    % norm(sys_red-sys_red1,'inf')
+    
+    %figure; bode(sys_red); hold on; bode(sys_red1)
+    
+    sys_red.StateName = strsplit(stateName,';');
+    sys_red.OutputName = {'Ur1';'Ur2'};
+    %xo = X(:,1);%for States Ur1,Ur2 and lifted states
+    
+    
+    %     psi_xk_1 = K_psi(x_(end-n+1:end));   % predict xk-1
+    %     psi_xk = K_psi(x(end-n+1:end));      % predict xk
+    %     G = 1/P*((P-1)*G + psi_xk_1*psi_xk_1'); % Update G
+    %     A = 1/P*((P-1)*A + psi_xk_1*psi_xk');   % Update A
+    %     K = pinv(G)*A;  % Update Koopman operator
+    %     add = [error_norm;1];   % Store the error_norm and that the Koopman operator was updated
+    %[K_psi, stateName] = koopmanstateextensionWFSim(vecLastUr,mpc.PolyLiftingFunction,size(K.A,1));
+    %ys_red = eDMD_RTUpdate(K_psi,vecCT_prime,1,stateName);
+    
+    
+    K.A = sys_red.A;
+    K.B = sys_red.B;
+    
+    %v =  error_norm; %1.2;
+else
+    P1 = 0;
+end
+
+
+
+% solve mpc
+if sol.k>=1
+    
+    % xinit = [Fk Pk CT_prime] in paper.
+    xinit         = zeros(mpc.nx*Wp.turbine.N,1);
+    xinit(mpc.Mf) = sol.turbine.force;
+    xinit(mpc.Mp) = sol.turbine.power;
+    xinit(mpc.Mu) = sol.turbine.CT_prime;
+    
+    % Koopman power model (KoopAIC = 0) without yaw optimization: fixed yaw
+    % trajectory over the horizon, the MPC optimizes CT_prime only
+    % OptYaw = 0: yaw 0 (pure AIC), OptYaw = 2: static yaw of findMaxYaw
+    % (as for KoopAIC = 1, OptYaw = 1), filtered and rate limited as applied.
+    % The static yaw depends on the power demand only: findMaxYaw scales the
+    % power of both turbines with the wind speed^3, so its maximum (18 deg)
+    % does not depend on the wind speed and is computed once without V1
+    mpc.yawFix = [];
+    mpc.yawFixU = [];
+    if ~mpc.KoopAIC && mpc.OptYaw ~= 1
+        yawTarget = 0;
+        if mpc.OptYaw == 2 && Wp.turbine.N == 2 && mpc.Pref(sol.k) > mpc.Pgreedy
+            if ~isfield(mpc,'yawStatic')
+                mpc.yawStatic = findMaxYaw(1,Wp);
+            end
+            yawTarget = mpc.yawStatic;
+        end
+        tauYaw = -mpc.den(2);
+        mpc.yawFix = zeros(mpc.Nh,1);
+        yawPrev = sol.turbine.Phi(1);
+        for idxH = 1:mpc.Nh
+            yawNext = tauYaw*yawPrev + (1-tauYaw)*yawTarget;
+            mpc.yawFix(idxH) = yawPrev + min(max(yawNext - yawPrev,-1),1);
+            yawPrev = mpc.yawFix(idxH);
+        end
+        % Control-affine power model: the decision variables are the
+        % controls before the filter, i.e. the yaw that results in yawFix
+        if mpc.KoopFeat && endsWith(K.feat.featureSet, {',aff', ',lin'})
+            mpc.yawFixU = (mpc.yawFix - tauYaw*[sol.turbine.Phi(1); mpc.yawFix(1:end-1)])/(1 - tauYaw);
+        end
+    end
+    
+    % nl-1 is number of times the rotor-averaged wind speeds in the horizon
+    % will be updated during one sample. If nl=1, the rotor-averaged wind speeds
+    % are taken constant in the horizon
+    nl = 2;
+    % Uopt = NaN(mpc.Nh*Wp.turbine.N,nl);
+    
+    % Subject to (Aco_)x <= bco_ <=>
+    mpc.Ac0_ = [- eye(mpc.Nh*mpc.N); eye(mpc.Nh*mpc.N)];
+    mpc.bc0_ = [- mpc.Ulim_lower; mpc.Ulim_upper];
+    %bc   = bc0_ - Ac0_ * mpc.utemp;
+    
+    for nlIdx = 1:nl
+        
+        % build wind farm model
+        [K,mpc]  = wfmodelNL(sol,Wp,mpc,2,K);% wfmodel(sol,Wp,mpc,nlIdx,K);% nlIdx = 2 to estimate wind for Nh
+        
+        % build matrices horizon for measured and estimated eff. wind speed
+        mpc  = Matsys(Wp,mpc,mpc.Nh);
+        
+        % builf matrices for power estimation
+        if mpc.KoopFeat
+            % input-only power model with input features, linearized around
+            % the current inputs held over the horizon (as mpc.utemp)
+            uNow = [sol.turbine.CT_prime; sol.turbine.Phi(1)];
+            if isempty(mpc.featM) % steady state of the current inputs
+                [~, mpc.featM] = koopmanLiftedStates('powerFeatures', uNow, K.feat.featureSet, K.feat.tau);
+            end
+            if isempty(mpc.urS) % no past Ur: steady state
+                mpc.urS = struct('M', sol.turbine.Ur, 'UrPrev', sol.turbine.Ur, 'k', 1);
+            end
+            x0 = koopmanLiftedStates('featState', K.feat, sol.turbine.Ur, mpc.urS);
+            mpc.Kp = MatsysPfeat(K.feat, x0, mpc.featM, repmat(uNow, 1, mpc.Nh));
+        else
+            mpc.Kp = MatsysP(K,mpc.Nh);
+        end
+        
+        % solve the optimization problem and calculate time
+        tic
+        mpcest = mpc;
+        mpcest.B = mpcest.Best;
+        mpcest.BBt = mpcest.BBtest;
+        
+        isEst = 1;
+        mpcest = quadprog_sol(mpcest,Wp,sol,xinit,isEst);
+        mpc = quadprog_sol(mpc,Wp,sol,xinit);
+                
+        mpc.displaytime = toc;
+        
+        %% True wind state space model of the wind farm
+        aValue_approx = mpc.x; %mpc.uval + mpc.utemp;
+        X    = mpc.AA*xinit + mpc.BBt*aValue_approx;
+        Y    = mpc.CC*X;                                %yopt
+        P    = reshape(Y(mpc.MP),Wp.turbine.N,mpc.Nh);  %Power output
+        
+        % tracking error value
+        Etemp_L    = mpc.Pref(sol.k:sol.k+mpc.Nh-1) - sum(P)';
+        
+        % change in input error value
+        d_utemp2   = [aValue_approx(1:Wp.turbine.N)-sol.turbine.CT_prime ; ...
+            aValue_approx(Wp.turbine.N+1:end) - aValue_approx(1:end-Wp.turbine.N)];
+        
+        % Calculate the cost function
+        mpc.costValue = Etemp_L'*mpc.Q*Etemp_L + d_utemp2'*mpc.R*d_utemp2;
+        
+        
+        %% Estimated wind state space model of the wind farm with estims
+        uValue_approx_est = mpcest.x; %mpcest.uval + mpcest.utemp;
+        X_est    = mpcest.AA*xinit + mpcest.BBt*uValue_approx_est;
+        Y_est    = mpcest.CC*X_est;                                %yopt
+        P_est    = reshape(Y(mpcest.MP),Wp.turbine.N,mpcest.Nh);  %Power output
+        
+        % tracking error value
+        Etemp_L    = mpc.Pref(sol.k:sol.k+mpcest.Nh-1) - sum(P_est)';
+        
+        % change in input error value
+        d_utemp2   = [aValue_approx(1:Wp.turbine.N)-sol.turbine.CT_prime ; ...
+            aValue_approx(Wp.turbine.N+1:end) - aValue_approx(1:end-Wp.turbine.N)];
+        
+        % Calculate the cost function
+        mpcest.costValue = Etemp_L'*mpcest.Q*Etemp_L + d_utemp2'*mpcest.R*d_utemp2;
+        
+        aValue_approx_K = mpcest.xK;
+        P_est_K    = mpc.Kp.L * mpcest.xinitK + mpc.Kp.S * mpcest.xK;
+        Etemp_L_K   = mpc.Pref(sol.k:sol.k+mpcest.Nh-1) - P_est_K;
+        mpc.PestK = P_est_K(1); % farm power (W) predicted for the optimal input of this step
+        
+        
+    end
+    
+end
+%% Assign the decision variables
+Yopt          = Y;
+Uopt          = Yopt(mpc.MU);
+Yopt_est          = Y_est;
+Uopt_est          = Yopt_est(mpcest.MU);
+
+nTx = round(Wp.turbine.Crx(1)/Wp.mesh.Lx * Wp.mesh.Nx)-1;
+nTy = round(Wp.turbine.Cry(1)/Wp.mesh.Ly * Wp.mesh.Ny);
+u1 = sol.u(nTx,nTy);
+
+tau =  mpc.A(3,3); %time constant
+if mpc.OptYaw == 1 && Wp.turbine.N == 2 && (measured == 1 || mpc.KoopAIC == 1) && ...
+    (mpc.Pref(sol.k) > mpc.Pgreedy)
+    temp = findMaxYaw(u1,Wp);
+    tempPhi = [tau*sol.turbine.Phi(1) + (1-tau)* temp;0];
+else
+    tempPhi =zeros(Wp.turbine.N,1);
+end
+
+
+
+if measured == 1
+    temp          = reshape(Uopt,[Wp.turbine.N,mpc.Nh]); % measured wind used
+elseif mpc.KoopAIC
+    temp          = reshape(Uopt_est,[Wp.turbine.N,mpc.Nh]);%estimated wind used
+else
+    
+    temp0          = reshape(aValue_approx_K,[2*Wp.turbine.N-1,mpc.Nh]);%estimated wind used
+    tempPhiK           = temp0(3,1); %zeros(Wp.turbine.N,1);
+    tempPhi = [tau*sol.turbine.Phi(1) + (1-tau)* tempPhiK;0];
+    if ~isempty(mpc.yawFix) % fixed yaw trajectory (already filtered)
+        tempPhi = [mpc.yawFix(1);0];
+    end
+    %phi = [tempPhi;0];
+    temp = tau*sol.turbine.CT_prime + (1-tau)* temp0(1:2,1);
+    %temp = temp0(1:2,1);
+end
+CT_prime      = temp(1:2,1);              % first action horizon
+
+% Adaptive AIC: persistent excitation during updates, weighted sum of the
+% optimal input and white noise in the CT_prime range, new every 5 samples
+if isfield(mpc,'adModel') && mpc.adaptive
+    if ~isfield(mpc.ad,'noise') || mod(sol.k,5) == 0
+        mpc.ad.noise = mpc.Ulim_lower(1:2) + (mpc.Ulim_upper(1:2) - mpc.Ulim_lower(1:2)).*rand(2,1);
+    end
+    if isfield(mpc.ad,'nUpd') && mpc.ad.nUpd > 1
+        CT_prime = 0.99*CT_prime + 0.01*mpc.ad.noise;
+    end
+end
+
+phiRLim = 1;
+aDiff = tempPhi(1) - sol.turbine.Phi(1);
+phi = [sol.turbine.Phi(1) + min(max(aDiff,-phiRLim),phiRLim), tempPhi(2:end)];
+
+
+% Update the moving means of the input-only power model with the applied inputs
+if mpc.KoopFeat && ~isempty(mpc.featM)
+    [~, mpc.featM] = koopmanLiftedStates('powerFeatures', [CT_prime; phi(1)], K.feat.featureSet, K.feat.tau, mpc.featM);
+    [~, mpc.urS] = koopmanLiftedStates('featState', K.feat, sol.turbine.Ur, mpc.urS);
+end
+
+%% Update the effective wind speed buffers
+vecLastUr(:,1:end-1)= vecLastUr(:,2:end);
+vecLastUrEst(:,1:end-1)= vecLastUrEst(:,2:end);
+vecLastUr(:,end) = sol.turbine.Ur;
+vecLastUrEst(:,end) =  sol.xprev(1:2);
+
+vecCT_prime(:,1:end-1)= vecCT_prime(:,2:end);
+vecCT_prime(:,end) = CT_prime;
+
+%Save ctprime
+mpc.error_norm = error_norm;
+mpc.P1 = P1;
+if isfield(mpc,'adModel') % update flag of the adaptive AIC (plot)
+    mpc.P1 = 1 + double(adUpdated);
+end
+
+% if mod((sol.k-1)/100,1) == 0 %Figure for debugging
+% codedir = mfilename('fullpath');
+% maindir = fileparts(fileparts(fileparts(fileparts(codedir))));
+% dirFig = fullfile(maindir,'CtFig');    %define main directory
+% if ~isfolder(dirFig)
+%     mkdir(dirFig)
+% end
+%     sN = 1;
+%     figure;
+%     for idxPl = 1:Wp.turbine.N, subplot(Wp.turbine.N,1,idxPl);
+%         plot(Uopt(idxPl:Wp.turbine.N:end)), hold on;
+%         plot(Uopt_est(idxPl:Wp.turbine.N:end),'--'); axis tight; grid on;
+%         if idxPl == 1
+%             title(sprintf('Time step %d: WT %d', sol.k,idxPl))
+%         else
+%             title(sprintf('WT %d', idxPl))
+%         end
+%
+%         if mod(idxPl-1,sN) == 0
+%             ylabel('c_T [-]');
+%         end
+%         if idxPl > sN*(sN-1)
+%             xlabel('k [-]');
+%         end
+%         if idxPl == Wp.turbine.N
+%             legend('Opt','LCP');
+%         end
+%     end
+%     print(gcf,fullfile(dirFig,sprintf('CTtrajectory%03d',sol.k)), '-dpng');
+% end
+
+
+
+%     figure;
+%     for idxPl = 1:9,subplot(3,3,idxPl); plot(tempplot(idxPl:9:end)),...
+%                 hold on;
+%                 plot(aValue_approxLemke(idxPl:9:end),'--'); axis tight; grid on;...
+%                 if idxPl == 1
+%                     title(sprintf('Time step %d', sol.k))
+%                 end
+%     end
+
+end
