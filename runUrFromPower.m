@@ -9,6 +9,7 @@
 mainDir = fileparts(mfilename('fullpath'));
 cd(mainDir);
 addpath('WFSimCode'); addpath('KoopmanIODMD'); addpath(fullfile('WFSimCode','bin','Kmpc'));
+addpath(genpath(fullfile('WFSimCode','libraries'))); % vaf, figure export
 dirOut = fullfile(mainDir,'figUrFromPower');
 if ~isfolder(dirOut), mkdir(dirOut); end
 

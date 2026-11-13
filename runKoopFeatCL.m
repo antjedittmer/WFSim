@@ -1,7 +1,11 @@
 % Closed loop with the Koopman MPC as the third run of step 3 in
 % mainGeneratePlots (KoopAIC = 0, OptYaw = 1), power prediction with the
 % input-only Koopman power model with input features (KoopFeat = 1)
-addpath('WFSimCode'); addpath('KoopmanIODMD');
+addpath('WFSimCode'); addpath('KoopmanIODMD'); addpath(fullfile('WFSimCode','bin','Kmpc'));
+addpath(genpath(fullfile('WFSimCode','libraries'))); % vaf, figure export
+if ~isfile(fullfile('DataInOutWfSim','PowerInputsOnly','KoopFeatModel.mat'))
+    koopmanEstimation('powerFeatureModel'); % input-only power model (KoopFeat = 1)
+end
 R = 1e-6; refstairs = -1; measured = 0; controller = 2; Vinf = 8;
 ControlSetStr = 'sowfa_2turb_alm_turbl'; PolyLiftingFunction = 0; KoopmanStates = 6;
 vinfStr = ''; kTimestep = 2; sol_update = 0; OptYaw = 1; KoopAIC = 0;

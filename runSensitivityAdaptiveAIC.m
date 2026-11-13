@@ -41,8 +41,7 @@ end
 addpath('WFSimCode');
 addpath('KoopmanIODMD');
 addpath(fullfile('WFSimCode','bin','Kmpc'));
-koopmanDir = fullfile(mainDir,'KoopmanIODMD');
-addpath(fullfile(koopmanDir,'2.DYNAMIC_MODE_DECOMPOSITION'), genpath(fullfile(koopmanDir,'Functions')));
+addpath(genpath(fullfile('WFSimCode','libraries'))); % vaf, figure export
 warning('off','MATLAB:nearlySingularMatrix'); % online updates with little excitation
 
 nuVec = [0.3 0.15 0.1 0.05 0.02]; % trigger threshold (m/s)

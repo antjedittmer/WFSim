@@ -4,6 +4,7 @@
 % runKoopModesCL (pure AIC, AIC + static yaw, AIC + WRC).
 % The models are saved as KoopFeatModel<k>.mat, k = 2..6 (WFSim_demo with KoopFeat = k).
 addpath('WFSimCode'); addpath('KoopmanIODMD'); addpath(fullfile('WFSimCode','bin','Kmpc'));
+addpath(genpath(fullfile('WFSimCode','libraries'))); % vaf, figure export
 dirOut = fullfile('DataInOutWfSim','PowerInputsOnly');
 
 %% Identification and validation
