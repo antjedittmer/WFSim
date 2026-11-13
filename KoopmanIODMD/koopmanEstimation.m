@@ -106,11 +106,6 @@ koopman = 1; %to add deterministic states to flow field data
 % Simulation characterisitc (resampling)
 dt = 1; %time sampling (s)
 
-KoopmanDir = fileparts(mfilename('fullpath')); % Get Koopman directory
-pathFunctions = genpath(fullfile(KoopmanDir,'Functions'));
-
-addpath(fullfile(KoopmanDir,'2.DYNAMIC_MODE_DECOMPOSITION'),...
-    pathFunctions);
 codedir = mfilename('fullpath');
 parentdir = fileparts(fileparts(codedir));
 
@@ -379,11 +374,6 @@ koopman = 1; %to add deterministic states to flow field data
 % Simulation characterisitc (resampling)
 dt = 1; %time sampling (s)
 
-KoopmanDir = fileparts(mfilename('fullpath')); % Get Koopman directory
-pathFunctions = genpath(fullfile(KoopmanDir,'Functions'));
-
-addpath(fullfile(KoopmanDir,'2.DYNAMIC_MODE_DECOMPOSITION'),...
-    pathFunctions);
 codedir = mfilename('fullpath');
 parentdir = fileparts(fileparts(codedir));
 
@@ -706,11 +696,6 @@ koopman = 1; %to add deterministic states to flow field data
 % Simulation characterisitc (resampling)
 dt = 1; %time sampling (s)
 
-KoopmanDir = fileparts(mfilename('fullpath')); % Get Koopman directory
-pathFunctions = genpath(fullfile(KoopmanDir,'Functions'));
-
-addpath(fullfile(KoopmanDir,'2.DYNAMIC_MODE_DECOMPOSITION'),...
-    pathFunctions);
 codedir = mfilename('fullpath');
 parentdir = fileparts(fileparts(codedir));
 
